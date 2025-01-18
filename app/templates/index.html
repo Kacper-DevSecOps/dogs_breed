@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog Breed Classifier</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <div class="container">
+        <h2>🐾 Upload Your Dog Photo 🐾</h2>
+
+        <form method="post" enctype="multipart/form-data">
+            <input type="file" name="file">
+            <input type="submit" value="Predict">
+        </form>
+
+        {% if image %}
+            <h3>🐶 Detected Breed: {{ breed }} ({{ '%.2f'|format(probability * 100) }}% confidence) 🐶</h3>
+            <img id="dog-image" src="{{ image }}" alt="Uploaded Image">
+            <div class="paw-print"></div>
+            <div class="paw-print"></div>
+        {% endif %}
+
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+    </div>
+
+</body>
+</html>

@@ -1,3 +1,5 @@
+import hashlib
+
 import kagglehub
 import torch
 from torch.utils.data import WeightedRandomSampler, random_split, DataLoader
@@ -6,6 +8,9 @@ from collections import Counter
 import pandas as pd
 import os
 import shutil
+
+from PIL import Image
+
 import matplotlib.pyplot as plt
 def download_and_prepare_data(wolf):
     """
@@ -62,6 +67,19 @@ def create_sampler(dataset):
 
     return sampler, weight_df
 
+def count_images_in_dir(base_dir):
+    """
+    Recursively count how many image files exist in the directory (and subdirectories).
+    """
+    valid_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff"}
+    count = 0
+    for root, dirs, files in os.walk(base_dir):
+        for filename in files:
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in valid_extensions:
+                count += 1
+    return count
+
 def get_data(batch_size=128, imbalance_handling=True,wolf = True,workers=4):
     """
     Prepares the dataset and dataloaders with optional imbalance handling.
@@ -77,19 +95,41 @@ def get_data(batch_size=128, imbalance_handling=True,wolf = True,workers=4):
     # Download and prepare data
     dogs_dir = download_and_prepare_data(wolf)
 
-    # Define transforms
-    transform = transforms.Compose([
+    # Define transformations
+    transform_test_val = transforms.Compose([
         transforms.Resize((331, 331)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    # Prepare datasets
-    dog_dataset = datasets.ImageFolder(dogs_dir, transform=transform)
+    transform_train = transforms.Compose([
+        transforms.Resize((331, 331)),
+        transforms.RandomRotation(degrees=30),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    remove_duplicates(dogs_dir)
+
+    # Load full dataset (without transform)
+    dog_dataset = datasets.ImageFolder(dogs_dir)
+    image_count = count_images_in_dir(dogs_dir)
+    print(f"Number of images after remove_duplicates: {image_count}")
+
+    # Load full dataset (without transform)
+    dog_dataset = datasets.ImageFolder(dogs_dir)
+
+    # Split dataset
     train_size = int(0.7 * len(dog_dataset))
     val_size = int(0.15 * len(dog_dataset))
     test_size = len(dog_dataset) - train_size - val_size
     train_dataset, val_dataset, test_dataset = random_split(dog_dataset, [train_size, val_size, test_size])
+
+    # Apply correct transformations to each dataset
+    train_dataset.dataset = datasets.ImageFolder(dogs_dir, transform=transform_train)
+    val_dataset.dataset = datasets.ImageFolder(dogs_dir, transform=transform_test_val)
+    test_dataset.dataset = datasets.ImageFolder(dogs_dir, transform=transform_test_val)
 
     # Handle imbalance with a sampler
     if imbalance_handling:
@@ -130,3 +170,21 @@ def plot_training_history(history):
 
     plt.tight_layout()
     plt.show()
+
+def get_image_hash(image_path):
+    with Image.open(image_path) as img:
+        return hashlib.md5(img.tobytes()).hexdigest
+
+def remove_duplicates(dogs_dir):
+    seen_hashes = set()
+    for class_name in os.listdir(dogs_dir):
+        class_dir = os.path.join(dogs_dir, class_name)
+        if os.path.isdir(class_dir):
+            for file_name in os.listdir(class_dir):
+                file_path = os.path.join(class_dir, file_name)
+                img_hash = get_image_hash(file_path)
+                if img_hash in seen_hashes:
+                    os.remove(file_path)
+                else:
+                    seen_hashes.add(img_hash)
+    print("Duplicates removed.")
